@@ -1,0 +1,82 @@
+<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-oZnd4aFZUxKVbU1ziwds7lxqAqvh8OdH4rjtTcw5syo='; style-src 'unsafe-inline'; connect-src https://api.github.com; base-uri 'none'; form-action 'none'">
+<title>IPO allotment</title><style>:root{--bg:#f6f7f9;--card:#fff;--fg:#1c2330;--mut:#6b7585;--line:#e3e6eb;--acc:#0a7d5a;--red:#c0392b}
+@media(prefers-color-scheme:dark){:root{--bg:#12151a;--card:#1b2028;--fg:#e8ebf0;--mut:#8f99a8;--line:#2b323d;--acc:#2bb98a;--red:#ff6b5e}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px system-ui,sans-serif}main{max-width:560px;margin:0 auto;padding:20px}
+header{display:flex;justify-content:space-between;align-items:center;margin:8px 0 20px}h1{font-size:20px;margin:0}h3{margin:0 0 10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:16px}
+input{width:100%;padding:14px;font-size:17px;border:1px solid var(--line);border-radius:10px;background:var(--bg);color:var(--fg);margin-bottom:10px}
+button{padding:12px 16px;font-size:16px;border:0;border-radius:10px;background:var(--acc);color:#fff;cursor:pointer}button:disabled{opacity:.5}
+button.g{background:none;color:var(--fg);border:1px solid var(--line)}.row{display:flex;gap:10px;align-items:center}.sp{flex:1}.mut{color:var(--mut);font-size:14px}
+table{width:100%;border-collapse:collapse;margin:8px 0}td{padding:10px 4px;border-bottom:1px solid var(--line)}td:last-child{text-align:right;font-weight:600}
+.ok{color:var(--acc)}.no{color:var(--mut)}.bad{color:var(--red)}a{color:var(--acc)}
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--card);color:var(--fg);width:min(92vw,440px)}dialog::backdrop{background:#0008}</style></head><body><main id=app></main><script>
+const $=s=>document.querySelector(s),LS=localStorage,sleep=ms=>new Promise(r=>setTimeout(r,ms));
+let TOKEN=null,REPO=null;const enc=new TextEncoder(),b64=b=>btoa(String.fromCharCode(...new Uint8Array(b))),un=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
+const view=h=>{$('#app').innerHTML=h};
+async function kdf(p,salt){const k=await crypto.subtle.importKey('raw',enc.encode(p),'PBKDF2',false,['deriveKey']);
+ return crypto.subtle.deriveKey({name:'PBKDF2',salt,iterations:310000,hash:'SHA-256'},k,{name:'AES-GCM',length:256},false,['encrypt','decrypt'])}
+async function seal(token,pass){const s=crypto.getRandomValues(new Uint8Array(16)),i=crypto.getRandomValues(new Uint8Array(12));
+ const c=await crypto.subtle.encrypt({name:'AES-GCM',iv:i},await kdf(pass,s),enc.encode(token));return{s:b64(s),i:b64(i),c:b64(c)}}
+async function open_(pass){const v=JSON.parse(LS.vault);return new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:un(v.i)},await kdf(pass,un(v.s)),un(v.c)))}
+const gh=(p,o={})=>fetch('https://api.github.com'+p,{...o,headers:{Authorization:'Bearer '+TOKEN,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28',...(o.headers||{})}});
+const J=async p=>{const r=await gh(p);return r.ok?r.json():null};
+const raw=async f=>{const r=await gh(`/repos/${REPO}/contents/${f}?ref=results&_=${Date.now()}`,{headers:{Accept:'application/vnd.github.raw+json'}});return r.ok?r.text():null};
+async function run(wf,inputs,say){
+ const d=await J(`/repos/${REPO}`);if(!d)throw Error('Can’t reach the repo. Check the repo name and token.');
+ const l0=await J(`/repos/${REPO}/actions/workflows/${wf}/runs?per_page=1`),before=l0&&l0.workflow_runs[0]?l0.workflow_runs[0].id:0;
+ const r=await gh(`/repos/${REPO}/actions/workflows/${wf}/dispatches`,{method:'POST',body:JSON.stringify({ref:d.default_branch,inputs})});
+ if(r.status!=204)throw Error(`GitHub wouldn’t start ${wf} (${r.status}). Is it uploaded, and does the token have Actions: Read and write?`);
+ say('Waiting for GitHub to start…');let id=0;
+ for(let i=0;i<30&&!id;i++){await sleep(3000);const l=await J(`/repos/${REPO}/actions/workflows/${wf}/runs?event=workflow_dispatch&per_page=5`);
+  const n=(l?l.workflow_runs:[]).filter(x=>x.id>before).map(x=>x.id);if(n.length)id=Math.min(...n)}
+ if(!id)throw Error('The run didn’t start. Look at the Actions tab on GitHub.');
+ for(let i=0;i<225;i++){say('Running on GitHub (about 2–3 minutes)… '+i*4+'s');await sleep(4000);
+  const x=await J(`/repos/${REPO}/actions/runs/${id}`);if(x&&x.status=='completed')return{id:String(id),ok:x.conclusion=='success',url:x.html_url}}
+ throw Error('Timed out waiting for GitHub.')}
+function setup(){view(`<h1>IPO allotment</h1><div class=card><p class=mut>First time only. The token is stored on this phone, locked with your passphrase.</p>
+<input id=repo placeholder="yourname/reponame" autocomplete=off><input id=tok type=password placeholder="GitHub token" autocomplete=off>
+<input id=p1 type=password placeholder="Choose a passphrase (8+ characters)"><input id=p2 type=password placeholder="Passphrase again">
+<button id=save>Save and open</button><p id=err class=bad></p></div>`);
+ $('#save').onclick=async()=>{const repo=$('#repo').value.trim(),tok=$('#tok').value.trim(),p=$('#p1').value;
+  if(!/^[\w.-]+\/[\w.-]+$/.test(repo))return $('#err').textContent='Repo must look like yourname/reponame.';
+  if(!tok)return $('#err').textContent='Paste the token.';if(p.length<8)return $('#err').textContent='Passphrase: at least 8 characters.';
+  if(p!==$('#p2').value)return $('#err').textContent='The passphrases don’t match.';
+  LS.vault=JSON.stringify(await seal(tok,p));LS.repo=repo;TOKEN=tok;REPO=repo;main()}}
+function lock(){view(`<h1>IPO allotment</h1><div class=card><input id=pw type=password placeholder="Passphrase" autofocus><div class=row><button id=un>Unlock</button><span class=sp></span><button id=fg class=g>Forget token</button></div><p id=err class=bad></p></div>`);
+ const go=async()=>{try{TOKEN=await open_($('#pw').value);REPO=LS.repo;main()}catch(e){$('#err').textContent='Wrong passphrase.'}};
+ $('#un').onclick=go;$('#pw').onkeydown=e=>{if(e.key=='Enter')go()};
+ $('#fg').onclick=()=>{if(confirm('Remove the saved token from this phone?')){LS.clear();setup()}}}
+const LAB={ALLOTTED:['Allotted ✓','ok'],NOT_ALLOTTED:['Not allotted','no']};
+function main(){view(`<header><h1>IPO allotment</h1><div class=row><button id=mg class=g>PANs</button><button id=lk class=g>Lock</button></div></header>
+<div class=card><input id=ipo placeholder="IPO name, then Enter" autocomplete=off><button id=go>Check allotment</button></div><div id=out></div>
+<dialog id=dlg><h3>Manage PANs</h3><div id=names></div><hr style="border:0;border-top:1px solid var(--line);margin:12px 0">
+<input id=nm placeholder="New name (e.g. mom)" autocomplete=off><input id=pan placeholder="PAN" maxlength=10 autocomplete=off style="text-transform:uppercase">
+<div class=row><button id=add>Add</button><button id=cx class=g>Close</button></div><p id=mm class=mut></p></dialog>`);
+ $('#lk').onclick=()=>{TOKEN=null;lock()};$('#go').onclick=check;$('#ipo').onkeydown=e=>{if(e.key=='Enter')check()};
+ $('#mg').onclick=async()=>{$('#mm').textContent='';$('#dlg').showModal();await names()};$('#cx').onclick=()=>$('#dlg').close();$('#add').onclick=add}
+function say(t){$('#out').innerHTML='<div class=card><span id=st></span></div>';$('#st').textContent=t}
+async function check(){const ipo=$('#ipo').value.trim();if(!ipo)return;$('#go').disabled=true;say('Starting…');
+ try{const r=await run('check.yml',{ipo_name:ipo,debug:'false'},say);let x=null;try{x=JSON.parse(await raw('results.json'))}catch(e){}
+  const o=$('#out');o.innerHTML='<div class=card><b id=t></b><div class=mut id=sub></div><table id=tb></table><a id=lnk target=_blank rel=noopener>Open the run on GitHub</a></div>';$('#lnk').href=r.url;
+  if(x&&x.run_id===r.id&&x.ok){$('#t').textContent=x.ipo;$('#sub').textContent='via '+x.registrar;
+   for(const n in x.results){const l=LAB[x.results[n]]||['Check manually','bad'],tr=$('#tb').insertRow();tr.insertCell().textContent=n;const c=tr.insertCell();c.textContent=l[0];c.className=l[1]}}
+  else{$('#t').textContent='No result';$('#sub').className='bad';$('#sub').textContent=(x&&x.run_id===r.id&&x.message)||'The run didn’t finish with a result. Open it on GitHub for the reason.'}}
+ catch(e){say(e.message);$('#st').className='bad'}$('#go').disabled=false}
+async function names(){let n=[];try{n=JSON.parse(await raw('accounts.json')).names}catch(e){}
+ const box=$('#names');box.textContent='';if(!n.length){box.className='mut';box.textContent='No list yet. It appears after the next check or change.';return}
+ box.className='';for(const a of n){const r=document.createElement('div');r.className='row';r.style.marginBottom='8px';const s=document.createElement('span');s.className='sp';s.textContent=a;
+  const b=document.createElement('button');b.className='g';b.textContent='Delete';b.onclick=()=>del(a);r.append(s,b);box.append(r)}}
+const mm=(t,c)=>{const m=$('#mm');m.textContent=t;m.className=c||'mut'};
+async function del(a){if(!confirm('Delete '+a+' from the PAN list?'))return;try{const r=await run('manage-pan.yml',{action:'delete',account_name:a,data:''},mm);
+ mm(r.ok?'Deleted '+a+'.':'The delete failed. Open the run on GitHub for the reason.',r.ok?'ok':'bad');await names()}catch(e){mm(e.message,'bad')}}
+async function add(){const name=$('#nm').value.trim(),pan=$('#pan').value.trim().toUpperCase();
+ if(!/^[A-Za-z0-9_-]{1,32}$/.test(name))return mm('Name: letters, digits, _ or - only.','bad');if(!/^[A-Z]{5}\d{4}[A-Z]$/.test(pan))return mm('That is not a valid PAN.','bad');
+ $('#add').disabled=true;try{const pem=await raw('public_key.pem');if(!pem)throw Error('No encryption key yet. Run the “Setup keys” workflow once on GitHub.');
+  const key=await crypto.subtle.importKey('spki',un(pem.replace(/-----[^-]+-----|\s/g,'')),{name:'RSA-OAEP',hash:'SHA-256'},false,['encrypt']);
+  const data=b64(await crypto.subtle.encrypt({name:'RSA-OAEP'},key,enc.encode(pan)));
+  const r=await run('manage-pan.yml',{action:'add',account_name:name,data},mm);
+  if(r.ok){mm('Added '+name+'. It is used from the next check.','ok');$('#nm').value=$('#pan').value=''}else mm('The add failed (name or PAN may already exist). Open the run on GitHub for the reason.','bad');await names()}
+ catch(e){mm(e.message,'bad')}$('#add').disabled=false}
+LS.vault?lock():setup();
+</script></body></html>
