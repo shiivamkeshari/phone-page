@@ -1,5 +1,5 @@
 <!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-oZnd4aFZUxKVbU1ziwds7lxqAqvh8OdH4rjtTcw5syo='; style-src 'unsafe-inline'; connect-src https://api.github.com; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-KHEL3mLEWE6ch62JPD8g06eCYIioUY8rW+pHBmj/V5Y='; style-src 'unsafe-inline'; connect-src https://api.github.com; base-uri 'none'; form-action 'none'">
 <title>IPO allotment</title><style>:root{--bg:#f6f7f9;--card:#fff;--fg:#1c2330;--mut:#6b7585;--line:#e3e6eb;--acc:#0a7d5a;--red:#c0392b}
 @media(prefers-color-scheme:dark){:root{--bg:#12151a;--card:#1b2028;--fg:#e8ebf0;--mut:#8f99a8;--line:#2b323d;--acc:#2bb98a;--red:#ff6b5e}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px system-ui,sans-serif}main{max-width:560px;margin:0 auto;padding:20px}
@@ -59,7 +59,7 @@ function say(t){$('#out').innerHTML='<div class=card><span id=st></span></div>';
 async function check(){const ipo=$('#ipo').value.trim();if(!ipo)return;$('#go').disabled=true;say('Starting…');
  try{const r=await run('check.yml',{ipo_name:ipo,debug:'false'},say);let x=null;try{x=JSON.parse(await raw('results.json'))}catch(e){}
   const o=$('#out');o.innerHTML='<div class=card><b id=t></b><div class=mut id=sub></div><table id=tb></table><a id=lnk target=_blank rel=noopener>Open the run on GitHub</a></div>';$('#lnk').href=r.url;
-  if(x&&x.run_id===r.id&&x.ok){$('#t').textContent=x.ipo;$('#sub').textContent='via '+x.registrar;
+  if(x&&x.run_id===r.id&&x.ok){$('#t').textContent=x.ipo;$('#sub').textContent='via '+x.registrar+(x.matched?' · '+x.matched:'');
    for(const n in x.results){const l=LAB[x.results[n]]||['Check manually','bad'],tr=$('#tb').insertRow();tr.insertCell().textContent=n;const c=tr.insertCell();c.textContent=l[0];c.className=l[1]}}
   else{$('#t').textContent='No result';$('#sub').className='bad';$('#sub').textContent=(x&&x.run_id===r.id&&x.message)||'The run didn’t finish with a result. Open it on GitHub for the reason.'}}
  catch(e){say(e.message);$('#st').className='bad'}$('#go').disabled=false}
