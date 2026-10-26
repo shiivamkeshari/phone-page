@@ -1,5 +1,5 @@
 <!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-KHEL3mLEWE6ch62JPD8g06eCYIioUY8rW+pHBmj/V5Y='; style-src 'unsafe-inline'; connect-src https://api.github.com; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'sha256-ISkr+x/ulhCffmH+7ozMFE1Ux565HfkNc+hyOXCweUc='; style-src 'unsafe-inline'; connect-src https://api.github.com; base-uri 'none'; form-action 'none'">
 <title>IPO allotment</title><style>:root{--bg:#f6f7f9;--card:#fff;--fg:#1c2330;--mut:#6b7585;--line:#e3e6eb;--acc:#0a7d5a;--red:#c0392b}
 @media(prefers-color-scheme:dark){:root{--bg:#12151a;--card:#1b2028;--fg:#e8ebf0;--mut:#8f99a8;--line:#2b323d;--acc:#2bb98a;--red:#ff6b5e}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px system-ui,sans-serif}main{max-width:560px;margin:0 auto;padding:20px}
@@ -31,8 +31,8 @@ async function run(wf,inputs,say){
  for(let i=0;i<30&&!id;i++){await sleep(3000);const l=await J(`/repos/${REPO}/actions/workflows/${wf}/runs?event=workflow_dispatch&per_page=5`);
   const n=(l?l.workflow_runs:[]).filter(x=>x.id>before).map(x=>x.id);if(n.length)id=Math.min(...n)}
  if(!id)throw Error('The run didn’t start. Look at the Actions tab on GitHub.');
- for(let i=0;i<225;i++){say('Running on GitHub (about 2–3 minutes)… '+i*4+'s');await sleep(4000);
-  const x=await J(`/repos/${REPO}/actions/runs/${id}`);if(x&&x.status=='completed')return{id:String(id),ok:x.conclusion=='success',url:x.html_url}}
+ for(let i=0;i<225;i++){const x=await J(`/repos/${REPO}/actions/runs/${id}`);if(x&&x.status=='completed')return{id:String(id),ok:x.conclusion=='success',url:x.html_url};
+  say(x&&x.status=='queued'&&i>15?'Waiting for a runner… (if you chose “my PC”: is it on, with the runner running?) '+i*4+'s':'Running (about 1–3 minutes)… '+i*4+'s');await sleep(4000)}
  throw Error('Timed out waiting for GitHub.')}
 function setup(){view(`<h1>IPO allotment</h1><div class=card><p class=mut>First time only. The token is stored on this phone, locked with your passphrase.</p>
 <input id=repo placeholder="yourname/reponame" autocomplete=off><input id=tok type=password placeholder="GitHub token" autocomplete=off>
@@ -49,20 +49,21 @@ function lock(){view(`<h1>IPO allotment</h1><div class=card><input id=pw type=pa
  $('#fg').onclick=()=>{if(confirm('Remove the saved token from this phone?')){LS.clear();setup()}}}
 const LAB={ALLOTTED:['Allotted ✓','ok'],NOT_ALLOTTED:['Not allotted','no']};
 function main(){view(`<header><h1>IPO allotment</h1><div class=row><button id=mg class=g>PANs</button><button id=lk class=g>Lock</button></div></header>
-<div class=card><input id=ipo placeholder="IPO name, then Enter" autocomplete=off><button id=go>Check allotment</button></div><div id=out></div>
+<div class=card><input id=ipo placeholder="IPO name, then Enter" autocomplete=off><div class=row><button id=go>Check allotment</button><button id=gp class=g>Check on my PC</button></div>
+<p class=mut style="margin:10px 0 0">If KFintech can’t be reached from GitHub, use “Check on my PC” (your PC must be on, with its runner running).</p></div><div id=out></div>
 <dialog id=dlg><h3>Manage PANs</h3><div id=names></div><hr style="border:0;border-top:1px solid var(--line);margin:12px 0">
 <input id=nm placeholder="New name (e.g. mom)" autocomplete=off><input id=pan placeholder="PAN" maxlength=10 autocomplete=off style="text-transform:uppercase">
 <div class=row><button id=add>Add</button><button id=cx class=g>Close</button></div><p id=mm class=mut></p></dialog>`);
- $('#lk').onclick=()=>{TOKEN=null;lock()};$('#go').onclick=check;$('#ipo').onkeydown=e=>{if(e.key=='Enter')check()};
+ $('#lk').onclick=()=>{TOKEN=null;lock()};$('#go').onclick=()=>check('github');$('#gp').onclick=()=>check('my-pc');$('#ipo').onkeydown=e=>{if(e.key=='Enter')check('github')};
  $('#mg').onclick=async()=>{$('#mm').textContent='';$('#dlg').showModal();await names()};$('#cx').onclick=()=>$('#dlg').close();$('#add').onclick=add}
 function say(t){$('#out').innerHTML='<div class=card><span id=st></span></div>';$('#st').textContent=t}
-async function check(){const ipo=$('#ipo').value.trim();if(!ipo)return;$('#go').disabled=true;say('Starting…');
- try{const r=await run('check.yml',{ipo_name:ipo,debug:'false'},say);let x=null;try{x=JSON.parse(await raw('results.json'))}catch(e){}
+async function check(where){const ipo=$('#ipo').value.trim();if(!ipo)return;$('#go').disabled=$('#gp').disabled=true;say('Starting…');
+ try{const r=await run('check.yml',{ipo_name:ipo,debug:'false',where},say);let x=null;try{x=JSON.parse(await raw('results.json'))}catch(e){}
   const o=$('#out');o.innerHTML='<div class=card><b id=t></b><div class=mut id=sub></div><table id=tb></table><a id=lnk target=_blank rel=noopener>Open the run on GitHub</a></div>';$('#lnk').href=r.url;
   if(x&&x.run_id===r.id&&x.ok){$('#t').textContent=x.ipo;$('#sub').textContent='via '+x.registrar+(x.matched?' · '+x.matched:'');
    for(const n in x.results){const l=LAB[x.results[n]]||['Check manually','bad'],tr=$('#tb').insertRow();tr.insertCell().textContent=n;const c=tr.insertCell();c.textContent=l[0];c.className=l[1]}}
   else{$('#t').textContent='No result';$('#sub').className='bad';$('#sub').textContent=(x&&x.run_id===r.id&&x.message)||'The run didn’t finish with a result. Open it on GitHub for the reason.'}}
- catch(e){say(e.message);$('#st').className='bad'}$('#go').disabled=false}
+ catch(e){say(e.message);$('#st').className='bad'}$('#go').disabled=$('#gp').disabled=false}
 async function names(){let n=[];try{n=JSON.parse(await raw('accounts.json')).names}catch(e){}
  const box=$('#names');box.textContent='';if(!n.length){box.className='mut';box.textContent='No list yet. It appears after the next check or change.';return}
  box.className='';for(const a of n){const r=document.createElement('div');r.className='row';r.style.marginBottom='8px';const s=document.createElement('span');s.className='sp';s.textContent=a;
